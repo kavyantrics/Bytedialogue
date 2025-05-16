@@ -12,11 +12,17 @@ datasource db {
 }
 
 model User {
-  id    String @id @unique //matches kinde user id
-  email String @unique
-
-  File    File[]
-  Message Message[]
+  id            String    @id @default(cuid())
+  kindeId       String?   @unique
+  email         String?   @unique
+  firstName     String?
+  lastName      String?
+  profileImage  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  files         File[]
+  messages      Message[]
+  name          String?
 
   stripeCustomerId       String?   @unique @map(name: "stripe_customer_id")
   stripeSubscriptionId   String?   @unique @map(name: "stripe_subscription_id")
@@ -32,31 +38,31 @@ enum UploadStatus {
 }
 
 model File {
-  id   String @id @default(cuid())
-  name String
-
+  id        String    @id @default(cuid())
+  name      String
   uploadStatus UploadStatus @default(PENDING)
+  url       String
+  key       String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  messages  Message[]
 
-  url      String
-  key      String
-  messages Message[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  User      User?    @relation(fields: [userId], references: [id])
-  userId    String?
+  @@index([userId])
 }
 
 model Message {
-  id   String @id @default(cuid())
-  text String @db.Text()
-
+  id           String   @id @default(cuid())
+  text         String
   isUserMessage Boolean
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  userId       String
+  fileId       String
+  user         User     @relation(fields: [userId], references: [id])
+  file         File     @relation(fields: [fileId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  User      User?    @relation(fields: [userId], references: [id])
-  userId    String?
-  File      File?    @relation(fields: [fileId], references: [id])
-  fileId    String?
+  @@index([userId])
+  @@index([fileId])
 }
