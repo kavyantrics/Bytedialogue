@@ -1,18 +1,18 @@
 import ChatWrapper from '@/components/chat/ChatWrapper'
 import PdfRenderer from '@/components/PdfRenderer'
-import { db } from '@/db'
+import { db } from '@/lib/db'
 import { getUserSubscriptionPlan } from '@/lib/stripe'
 import { getKindeServerSession } from '@kinde-oss/kinde-auth-nextjs/server'
 import { notFound, redirect } from 'next/navigation'
 
 interface PageProps {
-  params: {
+  params: Promise<{
     fileid: string
-  }
+  }>
 }
 
 const Page = async ({ params }: PageProps) => {
-  const { fileid } = params
+  const { fileid } = await params
 
   const { getUser } = getKindeServerSession()
   const user = await getUser()
@@ -27,7 +27,7 @@ const Page = async ({ params }: PageProps) => {
     },
   })
 
-  if (!file) notFound()
+  if (!file || !file.id) notFound()
 
   const plan = await getUserSubscriptionPlan()
 
@@ -38,7 +38,7 @@ const Page = async ({ params }: PageProps) => {
         <div className='flex-1 xl:flex'>
           <div className='px-4 py-6 sm:px-6 lg:pl-8 xl:flex-1 xl:pl-6'>
             {/* Main area */}
-            <PdfRenderer url={file.url} />
+            <PdfRenderer url={file.url} fileId={file.id} />
           </div>
         </div>
 

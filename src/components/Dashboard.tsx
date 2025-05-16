@@ -1,6 +1,5 @@
 'use client'
 
-import { trpc } from '@/app/_trpc/client'
 import UploadButton from './UploadButton'
 import {
   Ghost,
@@ -10,11 +9,20 @@ import {
   Trash,
 } from 'lucide-react'
 import Skeleton from 'react-loading-skeleton'
-import Link from 'next/link'
+import { Link } from './ui/link'
 import { format } from 'date-fns'
 import { Button } from './ui/button'
 import { useState } from 'react'
 import { getUserSubscriptionPlan } from '@/lib/stripe'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+interface File {
+  id: string
+  name: string
+  createdAt: string
+  public_id: string
+  url: string
+}
 
 interface PageProps {
   subscriptionPlan: Awaited<ReturnType<typeof getUserSubscriptionPlan>>
@@ -23,21 +31,36 @@ interface PageProps {
 const Dashboard = ({subscriptionPlan}: PageProps) => {
   const [currentlyDeletingFile, setCurrentlyDeletingFile] =
     useState<string | null>(null)
+  const queryClient = useQueryClient()
 
-  const utils = trpc.useContext()
+  const { data: files, isLoading } = useQuery<File[]>({
+    queryKey: ['files'],
+    queryFn: async () => {
+      const response = await fetch('/api/files')
+      if (!response.ok) {
+        throw new Error('Failed to fetch files')
+      }
+      return response.json()
+    }
+  })
 
-  const { data: files, isLoading } =
-    trpc.getUserFiles.useQuery()
-
-  const { mutate: deleteFile } =
-    trpc.deleteFile.useMutation({
+  const { mutate: deleteFile } = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const response = await fetch(`/api/files/${id}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        throw new Error('Failed to delete file')
+      }
+      return response.json()
+    },
       onSuccess: () => {
-        utils.getUserFiles.invalidate()
+      queryClient.invalidateQueries({ queryKey: ['files'] })
       },
-      onMutate({ id }) {
+    onMutate: ({ id }) => {
         setCurrentlyDeletingFile(id)
       },
-      onSettled() {
+    onSettled: () => {
         setCurrentlyDeletingFile(null)
       },
     })

@@ -1,17 +1,19 @@
-import * as React from 'react'
-import TextareaAutosize, {
-  TextareaAutosizeProps,
-} from 'react-textarea-autosize'
+'use client'
 
+import * as React from 'react'
+import dynamic from 'next/dynamic'
+import type { TextareaAutosizeProps } from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 
-export interface TextareaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+const TextareaAutosize = dynamic(
+  () => import('react-textarea-autosize').then((mod) => mod.default),
+  { ssr: false }
+)
 
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   TextareaAutosizeProps
->(({ className, ...props }, ref) => {
+>(({ className, maxRows, minRows, ...props }, ref) => {
   return (
     <TextareaAutosize
       className={cn(
@@ -19,6 +21,8 @@ const Textarea = React.forwardRef<
         className
       )}
       ref={ref}
+      maxRows={maxRows}
+      minRows={minRows}
       {...props}
     />
   )
