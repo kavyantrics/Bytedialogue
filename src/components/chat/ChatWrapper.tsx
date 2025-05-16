@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { buttonVariants } from '../ui/button'
 import { ChatContextProvider } from './ChatContext'
 import { PLANS } from '@/config/stripe'
+import { useEffect } from 'react'
 
 interface ChatWrapperProps {
   fileId: string
@@ -18,19 +19,28 @@ const ChatWrapper = ({
   fileId,
   isSubscribed,
 }: ChatWrapperProps) => {
-  const { data, isLoading } =
+  const { data, isLoading, refetch } =
     trpc.getFileUploadStatus.useQuery(
       {
         fileId,
       },
       {
-        refetchInterval: (data) =>
-          data?.status === 'SUCCESS' ||
-          data?.status === 'FAILED'
-            ? false
-            : 500,
+        refetchOnWindowFocus: false,
+        enabled: false, // Disable automatic fetching
       }
     )
+
+  // Check status only when component mounts and after a delay
+  useEffect(() => {
+    const checkStatus = async () => {
+      await refetch()
+      // If still processing, check again after 2 seconds
+      if (data === 'PROCESSING') {
+        setTimeout(checkStatus, 2000)
+      }
+    }
+    checkStatus()
+  }, [fileId, refetch])
 
   if (isLoading)
     return (
@@ -51,7 +61,7 @@ const ChatWrapper = ({
       </div>
     )
 
-  if (data?.status === 'PROCESSING')
+  if (data === 'PROCESSING')
     return (
       <div className='relative min-h-full bg-zinc-50 flex divide-y divide-zinc-200 flex-col justify-between gap-2'>
         <div className='flex-1 flex justify-center items-center flex-col mb-28'>
@@ -70,7 +80,7 @@ const ChatWrapper = ({
       </div>
     )
 
-  if (data?.status === 'FAILED')
+  if (data === 'FAILED')
     return (
       <div className='relative min-h-full bg-zinc-50 flex divide-y divide-zinc-200 flex-col justify-between gap-2'>
         <div className='flex-1 flex justify-center items-center flex-col mb-28'>

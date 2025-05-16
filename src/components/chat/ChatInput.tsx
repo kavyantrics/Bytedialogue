@@ -18,6 +18,14 @@ const ChatInput = ({ isDisabled }: ChatInputProps) => {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const handleSubmit = () => {
+    if (!message.trim() || isLoading || isDisabled) {
+      return
+    }
+    addMessage()
+    textareaRef.current?.focus()
+  }
+
   return (
     <div className='absolute bottom-0 left-0 w-full'>
       <div className='mx-2 flex flex-row gap-3 md:mx-4 md:last:mb-6 lg:mx-auto lg:max-w-2xl xl:max-w-3xl'>
@@ -34,10 +42,7 @@ const ChatInput = ({ isDisabled }: ChatInputProps) => {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-
-                    addMessage()
-
-                    textareaRef.current?.focus()
+                    handleSubmit()
                   }
                 }}
                 placeholder='Enter your question...'
@@ -45,14 +50,10 @@ const ChatInput = ({ isDisabled }: ChatInputProps) => {
               />
 
               <Button
-                disabled={isLoading || isDisabled}
+                disabled={isLoading || isDisabled || !message.trim()}
                 className='absolute bottom-1.5 right-[8px]'
                 aria-label='send message'
-                onClick={() => {
-                  addMessage()
-
-                  textareaRef.current?.focus()
-                }}>
+                onClick={handleSubmit}>
                 <Send className='h-4 w-4' />
               </Button>
             </div>

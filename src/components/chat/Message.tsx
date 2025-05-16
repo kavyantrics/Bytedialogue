@@ -62,9 +62,15 @@ const Message = forwardRef<HTMLDivElement, MessageProps>(
             )}>
             {typeof message.text === 'string' ? (
               <ReactMarkdown
-                className={cn('prose', {
+                components={{
+                  p: ({ children }) => (
+                    <p className={cn('prose', {
                   'text-zinc-50': message.isUserMessage,
                 })}>
+                      {children}
+                    </p>
+                  ),
+                }}>
                 {message.text}
               </ReactMarkdown>
             ) : (

@@ -67,14 +67,13 @@ export const ChatContextProvider = ({
       backupMessage.current = message
       setMessage('')
 
-      // step 1
+      // Cancel any outgoing refetches
       await utils.getFileMessages.cancel()
 
-      // step 2
-      const previousMessages =
-        utils.getFileMessages.getInfiniteData()
+      // Get the current messages
+      const previousMessages = utils.getFileMessages.getInfiniteData()
 
-      // step 3
+      // Optimistically update the messages
       utils.getFileMessages.setInfiniteData(
         { fileId, limit: INFINITE_QUERY_LIMIT },
         (old) => {
@@ -85,18 +84,20 @@ export const ChatContextProvider = ({
             }
           }
 
-          let newPages = [...old.pages]
+          const newPages = [...old.pages]
+          const latestPage = newPages[0]!
 
-          let latestPage = newPages[0]!
-
-          latestPage.messages = [
+          latestPage.items = [
             {
               createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
               id: crypto.randomUUID(),
               text: message,
               isUserMessage: true,
+              userId: '', // This will be set by the server
+              fileId,
             },
-            ...latestPage.messages,
+            ...latestPage.items,
           ]
 
           newPages[0] = latestPage
@@ -110,12 +111,7 @@ export const ChatContextProvider = ({
 
       setIsLoading(true)
 
-      return {
-        previousMessages:
-          previousMessages?.pages.flatMap(
-            (page) => page.messages
-          ) ?? [],
-      }
+      return { previousMessages }
     },
     onSuccess: async (stream) => {
       setIsLoading(false)
@@ -123,8 +119,7 @@ export const ChatContextProvider = ({
       if (!stream) {
         return toast({
           title: 'There was a problem sending this message',
-          description:
-            'Please refresh this page and try again',
+          description: 'Please refresh this page and try again',
           variant: 'destructive',
         })
       }
@@ -132,62 +127,61 @@ export const ChatContextProvider = ({
       const reader = stream.getReader()
       const decoder = new TextDecoder()
       let done = false
-
-      // accumulated response
       let accResponse = ''
 
       while (!done) {
-        const { value, done: doneReading } =
-          await reader.read()
+        const { value, done: doneReading } = await reader.read()
         done = doneReading
         const chunkValue = decoder.decode(value)
-
         accResponse += chunkValue
 
-        // append chunk to the actual message
+        // Update the messages with the streaming response
         utils.getFileMessages.setInfiniteData(
           { fileId, limit: INFINITE_QUERY_LIMIT },
           (old) => {
             if (!old) return { pages: [], pageParams: [] }
 
-            let isAiResponseCreated = old.pages.some(
+            const isAiResponseCreated = old.pages.some(
               (page) =>
-                page.messages.some(
-                  (message) => message.id === 'ai-response'
+                page.items.some(
+                  (item) => item.id === 'ai-response'
                 )
             )
 
-            let updatedPages = old.pages.map((page) => {
+            const updatedPages = old.pages.map((page) => {
               if (page === old.pages[0]) {
-                let updatedMessages
+                let updatedItems
 
                 if (!isAiResponseCreated) {
-                  updatedMessages = [
+                  updatedItems = [
                     {
                       createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
                       id: 'ai-response',
                       text: accResponse,
                       isUserMessage: false,
+                      userId: '', // This will be set by the server
+                      fileId,
                     },
-                    ...page.messages,
+                    ...page.items,
                   ]
                 } else {
-                  updatedMessages = page.messages.map(
-                    (message) => {
-                      if (message.id === 'ai-response') {
+                  updatedItems = page.items.map(
+                    (item) => {
+                      if (item.id === 'ai-response') {
                         return {
-                          ...message,
+                          ...item,
                           text: accResponse,
                         }
                       }
-                      return message
+                      return item
                     }
                   )
                 }
 
                 return {
                   ...page,
-                  messages: updatedMessages,
+                  items: updatedItems,
                 }
               }
 
@@ -199,17 +193,15 @@ export const ChatContextProvider = ({
         )
       }
     },
-
     onError: (_, __, context) => {
       setMessage(backupMessage.current)
       utils.getFileMessages.setData(
         { fileId },
-        { messages: context?.previousMessages ?? [] }
+        { items: context?.previousMessages?.pages.flatMap((page) => page.items) ?? [] }
       )
     },
     onSettled: async () => {
       setIsLoading(false)
-
       await utils.getFileMessages.invalidate({ fileId })
     },
   })
@@ -220,7 +212,12 @@ export const ChatContextProvider = ({
     setMessage(e.target.value)
   }
 
-  const addMessage = () => sendMessage({ message })
+  const addMessage = () => {
+    if (!message.trim()) {
+      return
+    }
+    sendMessage({ message: message.trim() })
+  }
 
   return (
     <ChatContext.Provider
