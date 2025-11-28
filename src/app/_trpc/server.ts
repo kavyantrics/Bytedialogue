@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { requireAdmin, getUsers, updateUserStatus, updateUserRole, getUserStats } from '@/lib/admin'
 import { getUsageStats, getCurrentMonthUsage } from '@/lib/usageTracking'
 import { getActiveUsers, getUploadTrends, getTokenUsageByPlan, getRevenueMetrics } from '@/lib/analytics'
+import Stripe from 'stripe'
 
 interface Context {
   db: typeof db
@@ -199,6 +200,97 @@ export const appRouter = router({
     return await getCurrentMonthUsage(ctx.userId)
   }),
 
+  // Stripe subscription
+  createStripeSession: privateProcedure.mutation(async () => {
+    try {
+      const { getUser } = getKindeServerSession()
+      const user = await getUser()
+
+      if (!user || !user.id) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' })
+      }
+
+      if (!process.env.STRIPE_SECRET_KEY) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Stripe is not configured. Please set STRIPE_SECRET_KEY in your environment variables.',
+        })
+      }
+
+      if (!process.env.STRIPE_PRICE_ID) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Stripe price ID not configured. Please set STRIPE_PRICE_ID in your environment variables.',
+        })
+      }
+
+      // Validate that it's a price ID, not a product ID
+      if (!process.env.STRIPE_PRICE_ID.startsWith('price_')) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Invalid Stripe Price ID format. Price IDs must start with "price_". You provided: "${process.env.STRIPE_PRICE_ID}". This looks like a Product ID (starts with "prod_"). Please get the Price ID from your Stripe dashboard: Products → Your Product → Pricing → Copy Price ID.`,
+        })
+      }
+
+      // Initialize Stripe client
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+        apiVersion: '2025-04-30.basil',
+      })
+
+      // Ensure URL has proper scheme
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const successUrl = baseUrl.startsWith('http://') || baseUrl.startsWith('https://')
+        ? `${baseUrl}/dashboard?success=true`
+        : `http://${baseUrl}/dashboard?success=true`
+      const cancelUrl = baseUrl.startsWith('http://') || baseUrl.startsWith('https://')
+        ? `${baseUrl}/dashboard?canceled=true`
+        : `http://${baseUrl}/dashboard?canceled=true`
+
+      // Create Stripe checkout session
+      const session = await stripe.checkout.sessions.create({
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        payment_method_types: ['card'],
+        mode: 'subscription',
+        billing_address_collection: 'auto',
+        customer_email: user.email ?? undefined,
+        line_items: [
+          {
+            price: process.env.STRIPE_PRICE_ID,
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          userId: user.id,
+        },
+      })
+
+      if (!session.url) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to create Stripe checkout session',
+        })
+      }
+
+      return { url: session.url }
+    } catch (error) {
+      console.error('Error creating Stripe session:', error)
+      if (error instanceof TRPCError) {
+        throw error
+      }
+      if (error instanceof Stripe.errors.StripeError) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Stripe error: ${error.message}`,
+        })
+      }
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: error instanceof Error ? error.message : 'Failed to create Stripe session',
+      })
+    }
+  }),
+
   // Admin endpoints
   adminGetUsers: privateProcedure
     .input(z.object({
@@ -267,7 +359,16 @@ export const appRouter = router({
     }))
     .query(async ({ input }) => {
       await requireAdmin()
-      return await getUsageStats(input.startDate, input.endDate)
+      try {
+        return await getUsageStats(input.startDate, input.endDate)
+      } catch (error) {
+        console.error('[TRPC] Error in adminGetUsageStats:', error)
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Failed to fetch usage statistics',
+          cause: error,
+        })
+      }
     }),
 
   // Analytics endpoints

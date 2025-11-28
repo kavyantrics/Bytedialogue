@@ -14,6 +14,9 @@ const nextConfig = {
   },
   webpack: (config) => {
     config.resolve.alias.canvas = false
+    // Ensure single React instance
+    config.resolve.alias.react = require.resolve('react')
+    config.resolve.alias['react-dom'] = require.resolve('react-dom')
     return config
   },
 }

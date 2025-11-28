@@ -1,15 +1,40 @@
 'use client'
 
-import { useState } from 'react'
 import { trpc } from '@/app/_trpc/client'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import UsersManagement from './UsersManagement'
 import UsageAnalytics from './UsageAnalytics'
 import AnalyticsDashboard from './AnalyticsDashboard'
-import { Shield, Users, BarChart3 } from 'lucide-react'
+import { Shield, Users, BarChart3, Loader2 } from 'lucide-react'
 
 export default function AdminDashboard() {
-  const { data: usageStats, isLoading: statsLoading } = trpc.adminGetUsageStats.useQuery({})
+  const { data: usageStats, isLoading: statsLoading, error } = trpc.adminGetUsageStats.useQuery(
+    {},
+    {
+      retry: false,
+      refetchOnWindowFocus: false,
+    }
+  )
+
+  if (statsLoading) {
+    return (
+      <div className="container mx-auto py-8">
+        <div className="flex justify-center items-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto py-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-800">Error loading admin stats: {error.message}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="container mx-auto py-8">
@@ -22,7 +47,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Stats Overview */}
-      {!statsLoading && usageStats && (
+      {usageStats && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-6 rounded-lg shadow border">
             <div className="flex items-center gap-2 mb-2">

@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getKindeServerSession } from '@kinde-oss/kinde-auth-nextjs/server'
 import { db } from '@/lib/db'
-import AdminDashboard from '@/components/admin/AdminDashboard'
+import AdminDashboardWrapper from '@/components/admin/AdminDashboardWrapper'
 
 export default async function AdminPage() {
   const { getUser } = getKindeServerSession()
@@ -11,14 +11,14 @@ export default async function AdminPage() {
     redirect('/auth-callback?origin=admin')
   }
 
-  const dbUser = await db.user.findFirst({
+  const dbUser = await db.user.findUnique({
     where: { id: user.id },
   })
 
-  if (!dbUser || dbUser.role !== 'ADMIN') {
+  if (!dbUser || (dbUser as { role?: string }).role !== 'ADMIN') {
     redirect('/dashboard')
   }
 
-  return <AdminDashboard />
+  return <AdminDashboardWrapper />
 }
 

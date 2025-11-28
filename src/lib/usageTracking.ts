@@ -1,5 +1,4 @@
 import { db } from '@/lib/db'
-import { PLANS } from '@/config/stripe'
 import { getUserSubscriptionPlan as getPlan } from '@/lib/stripe'
 
 // OpenAI pricing (as of 2024) - update as needed
@@ -167,46 +166,63 @@ export async function checkUsageLimits(userId: string): Promise<{
 
 // Get usage statistics for admin
 export async function getUsageStats(startDate?: Date, endDate?: Date) {
-  const where: {
-    createdAt?: {
-      gte?: Date
-      lte?: Date
+  try {
+    const where: {
+      createdAt?: {
+        gte?: Date
+        lte?: Date
+      }
+    } = {}
+
+    if (startDate || endDate) {
+      where.createdAt = {}
+      if (startDate) where.createdAt.gte = startDate
+      if (endDate) where.createdAt.lte = endDate
     }
-  } = {}
 
-  if (startDate || endDate) {
-    where.createdAt = {}
-    if (startDate) where.createdAt.gte = startDate
-    if (endDate) where.createdAt.lte = endDate
-  }
+    const stats = await db.usageRecord.aggregate({
+      where,
+      _sum: {
+        tokensUsed: true,
+        cost: true,
+      },
+      _count: {
+        id: true,
+      },
+    })
 
-  const stats = await db.usageRecord.aggregate({
-    where,
-    _sum: {
-      tokensUsed: true,
-      cost: true,
-    },
-    _count: {
-      id: true,
-    },
-  })
+    const userWhere: {
+      createdAt?: {
+        gte?: Date
+        lte?: Date
+      }
+    } = {}
 
-  const userCount = await db.user.count({
-    where: {
-      createdAt: startDate || endDate
-        ? {
-            ...(startDate && { gte: startDate }),
-            ...(endDate && { lte: endDate }),
-          }
-        : undefined,
-    },
-  })
+    if (startDate || endDate) {
+      userWhere.createdAt = {}
+      if (startDate) userWhere.createdAt.gte = startDate
+      if (endDate) userWhere.createdAt.lte = endDate
+    }
 
-  return {
-    totalTokens: stats._sum.tokensUsed || 0,
-    totalCost: stats._sum.cost || 0,
-    totalOperations: stats._count.id || 0,
-    totalUsers: userCount,
+    const userCount = await db.user.count({
+      where: userWhere,
+    })
+
+    return {
+      totalTokens: stats._sum.tokensUsed || 0,
+      totalCost: stats._sum.cost || 0,
+      totalOperations: stats._count.id || 0,
+      totalUsers: userCount,
+    }
+  } catch (error) {
+    console.error('[USAGE_STATS] Error getting usage stats:', error)
+    // Return default values on error
+    return {
+      totalTokens: 0,
+      totalCost: 0,
+      totalOperations: 0,
+      totalUsers: 0,
+    }
   }
 }
 

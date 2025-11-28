@@ -23,22 +23,22 @@ enum AccountStatus {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  kindeId       String?   @unique
-  email         String?   @unique
-  firstName     String?
-  lastName      String?
-  profileImage  String?
-  role          UserRole  @default(USER)
-  accountStatus AccountStatus @default(ACTIVE)
-  emailVerified Boolean   @default(false)
-  twoFactorEnabled Boolean @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  files         File[]
-  messages      Message[]
-  usageRecords  UsageRecord[]
-  name          String?
+  id               String        @id @default(cuid())
+  kindeId          String?       @unique
+  email            String?       @unique
+  firstName        String?
+  lastName         String?
+  profileImage     String?
+  role             UserRole      @default(USER)
+  accountStatus    AccountStatus @default(ACTIVE)
+  emailVerified    Boolean       @default(false)
+  twoFactorEnabled Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  files            File[]
+  messages         Message[]
+  usageRecords     UsageRecord[]
+  name             String?
 
   stripeCustomerId       String?   @unique @map(name: "stripe_customer_id")
   stripeSubscriptionId   String?   @unique @map(name: "stripe_subscription_id")
@@ -58,20 +58,20 @@ enum UploadStatus {
 }
 
 model File {
-  id            String    @id @default(cuid())
-  name          String
-  uploadStatus  UploadStatus @default(PENDING)
-  url           String
-  key           String
-  size          Int?      // File size in bytes
-  summary       String?   // Document summary
-  isProcessed   Boolean   @default(false) // Whether embeddings are generated
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  messages      Message[]
-  vectorChunks  VectorChunk[]
+  id           String        @id @default(cuid())
+  name         String
+  uploadStatus UploadStatus  @default(PENDING)
+  url          String
+  key          String
+  size         Int? // File size in bytes
+  summary      String? // Document summary
+  isProcessed  Boolean       @default(false) // Whether embeddings are generated
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  messages     Message[]
+  vectorChunks VectorChunk[]
 
   @@index([userId])
   @@index([isProcessed])
@@ -79,16 +79,16 @@ model File {
 }
 
 model Message {
-  id             String   @id @default(cuid())
-  text           String
-  isUserMessage  Boolean
+  id                  String   @id @default(cuid())
+  text                String
+  isUserMessage       Boolean
   followUpSuggestions String? // JSON array of suggested questions
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  userId         String
-  fileId         String
-  user           User     @relation(fields: [userId], references: [id])
-  file           File     @relation(fields: [fileId], references: [id])
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  userId              String
+  fileId              String
+  user                User     @relation(fields: [userId], references: [id])
+  file                File     @relation(fields: [fileId], references: [id])
 
   @@index([userId])
   @@index([fileId])
@@ -97,38 +97,38 @@ model Message {
 
 // Vector chunks for RAG implementation
 model VectorChunk {
-  id          String   @id @default(cuid())
-  fileId      String
-  content     String   // Text chunk
-  embedding   String?  // JSON array of embedding vector (stored as string for now)
-  metadata    String?  // JSON metadata (page number, position, etc.)
-  createdAt   DateTime @default(now())
-  file        File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  fileId    String
+  content   String // Text chunk
+  embedding String? // JSON array of embedding vector (stored as string for now)
+  metadata  String? // JSON metadata (page number, position, etc.)
+  createdAt DateTime @default(now())
+  file      File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
   @@index([fileId])
 }
 
 // Usage tracking for AI tokens and file operations
 model UsageRecord {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Token usage
-  tokensUsed    Int      @default(0) // Total tokens used in this operation
-  promptTokens  Int      @default(0) // Prompt tokens
+  tokensUsed       Int   @default(0) // Total tokens used in this operation
+  promptTokens     Int   @default(0) // Prompt tokens
   completionTokens Int   @default(0) // Completion tokens
-  cost          Float    @default(0) // Cost in USD
-  
+  cost             Float @default(0) // Cost in USD
+
   // Operation details
-  operationType String   // 'chat', 'summary', 'embedding', 'transcription'
-  fileId        String?  // Associated file if applicable
-  messageId     String?  // Associated message if applicable
-  
+  operationType String // 'chat', 'summary', 'embedding', 'transcription'
+  fileId        String? // Associated file if applicable
+  messageId     String? // Associated message if applicable
+
   // Time tracking
-  month         Int      // 1-12
-  year          Int      // e.g., 2024
-  createdAt     DateTime @default(now())
+  month     Int // 1-12
+  year      Int // e.g., 2024
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([year, month])
