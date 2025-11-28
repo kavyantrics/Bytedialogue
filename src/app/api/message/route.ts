@@ -5,6 +5,8 @@ import OpenAI from 'openai'
 import { extractPdfText, findRelevantChunks } from '@/lib/rag'
 import { generateFollowUpSuggestions } from '@/lib/followUpSuggestions'
 import { checkUsageLimits, recordUsage, calculateCost } from '@/lib/usageTracking'
+import { log } from '@/lib/logger'
+import { aiOperationsTotal, aiTokensUsed, aiCostTotal, httpRequestDuration, httpRequestTotal } from '@/lib/metrics'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -12,11 +14,15 @@ const openai = new OpenAI({
 
 
 export async function POST(req: Request) {
+  const timer = httpRequestDuration.startTimer({ method: 'POST', route: '/api/message' })
+
   try {
     const { getUser } = getKindeServerSession()
     const user = await getUser()
 
     if (!user || !user.id) {
+      timer({ status: 401 })
+      httpRequestTotal.inc({ method: 'POST', route: '/api/message', status: 401 })
       return new NextResponse('Unauthorized', { status: 401 })
     }
 
@@ -249,14 +255,29 @@ Please answer the user's question using ONLY the information provided in the exc
             fileId,
             messageId,
           })
+
+          // Update Prometheus metrics
+          aiOperationsTotal.inc({ operation_type: 'chat', model })
+          aiTokensUsed.inc({ operation_type: 'chat', model }, totalTokens)
+          aiCostTotal.inc({ operation_type: 'chat', model }, cost)
+          
+          log.info('Chat completion successful', {
+            userId: user.id,
+            fileId,
+            tokens: totalTokens,
+            cost,
+          })
         } catch (error) {
-          console.error('Stream processing error:', error)
+          log.error('Stream processing error', error as Error, { userId: user.id, fileId })
           controller.error(error)
         } finally {
           controller.close()
         }
       }
     })
+
+    timer({ status: 200 })
+    httpRequestTotal.inc({ method: 'POST', route: '/api/message', status: 200 })
 
     return new Response(stream, {
       headers: {
@@ -266,7 +287,9 @@ Please answer the user's question using ONLY the information provided in the exc
       },
     })
   } catch (error) {
-    console.error('[MESSAGE_ERROR]', error)
+    timer({ status: 500 })
+    httpRequestTotal.inc({ method: 'POST', route: '/api/message', status: 500 })
+    log.error('Error in message API', error as Error, { route: '/api/message' })
     return new NextResponse('Internal Error', { status: 500 })
   }
 }

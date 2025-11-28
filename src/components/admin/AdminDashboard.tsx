@@ -5,6 +5,7 @@ import { trpc } from '@/app/_trpc/client'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import UsersManagement from './UsersManagement'
 import UsageAnalytics from './UsageAnalytics'
+import AnalyticsDashboard from './AnalyticsDashboard'
 import { Shield, Users, BarChart3 } from 'lucide-react'
 
 export default function AdminDashboard() {
@@ -54,15 +55,19 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      <Tabs defaultValue="users" className="w-full">
+      <Tabs defaultValue="analytics" className="w-full">
         <TabsList>
+          <TabsTrigger value="analytics">Analytics Dashboard</TabsTrigger>
           <TabsTrigger value="users">Users Management</TabsTrigger>
-          <TabsTrigger value="analytics">Usage Analytics</TabsTrigger>
+          <TabsTrigger value="usage">Usage Analytics</TabsTrigger>
         </TabsList>
+        <TabsContent value="analytics">
+          <AnalyticsDashboard />
+        </TabsContent>
         <TabsContent value="users">
           <UsersManagement />
         </TabsContent>
-        <TabsContent value="analytics">
+        <TabsContent value="usage">
           <UsageAnalytics />
         </TabsContent>
       </Tabs>

@@ -18,4 +18,15 @@ const nextConfig = {
   },
 }
 
-module.exports = withBundleAnalyzer(nextConfig) 
+const sentryWebpackPluginOptions = {
+  silent: true,
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  widenClientFileUpload: true,
+  hideSourceMaps: true,
+  disableLogger: true,
+}
+
+module.exports = process.env.NEXT_PUBLIC_SENTRY_DSN
+  ? require('@sentry/nextjs').withSentryConfig(withBundleAnalyzer(nextConfig), sentryWebpackPluginOptions)
+  : withBundleAnalyzer(nextConfig) 

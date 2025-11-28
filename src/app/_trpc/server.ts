@@ -4,6 +4,7 @@ import { getKindeServerSession } from '@kinde-oss/kinde-auth-nextjs/server'
 import { z } from 'zod'
 import { requireAdmin, getUsers, updateUserStatus, updateUserRole, getUserStats } from '@/lib/admin'
 import { getUsageStats, getCurrentMonthUsage } from '@/lib/usageTracking'
+import { getActiveUsers, getUploadTrends, getTokenUsageByPlan, getRevenueMetrics } from '@/lib/analytics'
 
 interface Context {
   db: typeof db
@@ -267,6 +268,33 @@ export const appRouter = router({
     .query(async ({ input }) => {
       await requireAdmin()
       return await getUsageStats(input.startDate, input.endDate)
+    }),
+
+  // Analytics endpoints
+  adminGetActiveUsers: privateProcedure
+    .input(z.object({ days: z.number().default(30) }))
+    .query(async ({ input }) => {
+      await requireAdmin()
+      return await getActiveUsers(input.days)
+    }),
+
+  adminGetUploadTrends: privateProcedure
+    .input(z.object({ days: z.number().default(30) }))
+    .query(async ({ input }) => {
+      await requireAdmin()
+      return await getUploadTrends(input.days)
+    }),
+
+  adminGetTokenUsageByPlan: privateProcedure
+    .query(async () => {
+      await requireAdmin()
+      return await getTokenUsageByPlan()
+    }),
+
+  adminGetRevenueMetrics: privateProcedure
+    .query(async () => {
+      await requireAdmin()
+      return await getRevenueMetrics()
     }),
 })
 

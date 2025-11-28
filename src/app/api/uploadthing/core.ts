@@ -5,6 +5,8 @@ import { extractPdfText, processPdfForRAG } from "@/lib/rag";
 import { generateSummary } from "@/lib/summarizer";
 import { checkUsageLimits } from "@/lib/usageTracking";
 import { getUserSubscriptionPlan } from "@/lib/stripe";
+import { log } from "@/lib/logger";
+import { pdfUploadsTotal } from "@/lib/metrics";
 
 // Process PDF for RAG in the background
 async function processPdfForRAGBackground(fileId: string, fileUrl: string) {
@@ -92,7 +94,14 @@ export const ourFileRouter = {
               uploadStatus: "FAILED",
               size: file.size,
             },
-          });
+          })
+          pdfUploadsTotal.inc({ status: 'FAILED' })
+          log.warn('File upload failed - size limit exceeded', {
+            userId: metadata.userId,
+            fileName: file.name,
+            fileSize: file.size,
+            limit: plan.fileSizeLimit,
+          })
           throw new Error(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds plan limit (${(plan.fileSizeLimit / 1024 / 1024).toFixed(2)}MB)`);
         }
 
@@ -105,9 +114,15 @@ export const ourFileRouter = {
             uploadStatus: "SUCCESS",
             size: file.size,
           },
-        });
+        })
 
-        console.log("File created in database:", createdFile.id)
+        pdfUploadsTotal.inc({ status: 'SUCCESS' })
+        log.info('File uploaded successfully', {
+          fileId: createdFile.id,
+          userId: metadata.userId,
+          fileName: file.name,
+          fileSize: file.size,
+        })
         
         // Process PDF for RAG in the background (don't await to avoid blocking)
         processPdfForRAGBackground(createdFile.id, fileUrl).catch((error) => {
