@@ -1,6 +1,32 @@
 import { createUploadthing, type FileRouter } from "uploadthing/next";
 import { getKindeServerSession } from "@kinde-oss/kinde-auth-nextjs/server";
 import { db } from "@/lib/db";
+import { extractPdfText, processPdfForRAG } from "@/lib/rag";
+import { generateSummary } from "@/lib/summarizer";
+
+// Process PDF for RAG in the background
+async function processPdfForRAGBackground(fileId: string, fileUrl: string) {
+  try {
+    console.log(`[RAG_BACKGROUND] Starting RAG processing for file: ${fileId}`)
+    const pdfText = await extractPdfText(fileUrl)
+    
+    if (pdfText && pdfText.trim().length > 0) {
+      // Process for RAG (create embeddings)
+      await processPdfForRAG(fileId, pdfText)
+      
+      // Generate summary
+      const summary = await generateSummary(pdfText)
+      await db.file.update({
+        where: { id: fileId },
+        data: { summary },
+      })
+      
+      console.log(`[RAG_BACKGROUND] Successfully processed file: ${fileId}`)
+    }
+  } catch (error) {
+    console.error(`[RAG_BACKGROUND] Error processing file ${fileId}:`, error)
+  }
+}
 
 // createUploadthing automatically reads UPLOADTHING_TOKEN from environment variables
 // The token should be a base64-encoded JSON: { apiKey: string, appId: string, regions: string[] }
@@ -45,6 +71,12 @@ export const ourFileRouter = {
         });
 
         console.log("File created in database:", createdFile.id)
+        
+        // Process PDF for RAG in the background (don't await to avoid blocking)
+        processPdfForRAGBackground(createdFile.id, fileUrl).catch((error) => {
+          console.error("Error processing PDF for RAG:", error)
+        })
+        
         return { uploadedBy: metadata.userId };
       } catch (error) {
         console.error("Error in onUploadComplete:", error)

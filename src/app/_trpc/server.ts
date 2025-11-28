@@ -128,6 +128,16 @@ export const appRouter = router({
         cursor: cursor ? { id: cursor } : undefined,
         orderBy: {
           createdAt: 'desc' // Newest first
+        },
+        select: {
+          id: true,
+          text: true,
+          isUserMessage: true,
+          createdAt: true,
+          updatedAt: true,
+          userId: true,
+          fileId: true,
+          followUpSuggestions: true, // Include follow-up suggestions
         }
       })
 

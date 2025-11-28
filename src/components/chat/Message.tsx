@@ -4,14 +4,25 @@ import { Icons } from '../Icons'
 import ReactMarkdown from 'react-markdown'
 import { format } from 'date-fns'
 import { forwardRef, memo } from 'react'
+import FollowUpSuggestions from './FollowUpSuggestions'
 
 interface MessageProps {
-  message: ExtendedMessage
+  message: ExtendedMessage & { followUpSuggestions?: string | null }
   isNextMessageSamePerson: boolean
+  onSuggestionClick?: (suggestion: string) => void
 }
 
 const Message = memo(forwardRef<HTMLDivElement, MessageProps>(
-  ({ message, isNextMessageSamePerson }, ref) => {
+  ({ message, isNextMessageSamePerson, onSuggestionClick }, ref) => {
+    // Parse follow-up suggestions if they exist
+    let followUpSuggestions: string[] = []
+    if (message.followUpSuggestions) {
+      try {
+        followUpSuggestions = JSON.parse(message.followUpSuggestions) as string[]
+      } catch (error) {
+        console.error('Error parsing follow-up suggestions:', error)
+      }
+    }
     return (
       <div
         ref={ref}
@@ -92,6 +103,16 @@ const Message = memo(forwardRef<HTMLDivElement, MessageProps>(
               </div>
             ) : null}
           </div>
+          
+          {/* Show follow-up suggestions for AI messages */}
+          {!message.isUserMessage && followUpSuggestions.length > 0 && onSuggestionClick && (
+            <div className="mt-2">
+              <FollowUpSuggestions
+                suggestions={followUpSuggestions}
+                onSuggestionClick={onSuggestionClick}
+              />
+            </div>
+          )}
         </div>
 
         {/* Spacer for user messages to align properly */}

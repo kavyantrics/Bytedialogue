@@ -11,6 +11,7 @@ import { INFINITE_QUERY_LIMIT } from '@/config/infinite-query'
 
 type StreamResponse = {
   addMessage: () => void
+  sendMessage: (message: string) => void // Add method to send message directly
   message: string
   handleInputChange: (
     event: React.ChangeEvent<HTMLTextAreaElement>
@@ -20,6 +21,7 @@ type StreamResponse = {
 
 export const ChatContext = createContext<StreamResponse>({
   addMessage: () => {},
+  sendMessage: () => {},
   message: '',
   handleInputChange: () => {},
   isLoading: false,
@@ -253,10 +255,18 @@ export const ChatContextProvider = ({
     sendMessage({ message: message.trim() })
   }
 
+  const sendMessageDirectly = (msg: string) => {
+    if (!msg.trim()) {
+      return
+    }
+    sendMessage({ message: msg.trim() })
+  }
+
   return (
     <ChatContext.Provider
       value={{
         addMessage,
+        sendMessage: sendMessageDirectly,
         message,
         handleInputChange,
         isLoading,

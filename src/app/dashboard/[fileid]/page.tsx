@@ -6,6 +6,7 @@ import { Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import PdfRenderer from '@/components/PdfRenderer'
 import ChatWrapper from '@/components/chat/ChatWrapper'
+import DocumentSummary from '@/components/DocumentSummary'
 
 interface PageProps {
   params: Promise<{
@@ -26,6 +27,12 @@ const Page = async ({ params }: PageProps) => {
     where: {
       id: fileid,
       userId: user.id,
+    },
+    select: {
+      id: true,
+      url: true,
+      name: true,
+      summary: true,
     },
   })
 
@@ -54,6 +61,15 @@ const Page = async ({ params }: PageProps) => {
 
         {/* Right sidebar - Chat with independent scroll */}
         <div className='shrink-0 flex-[0.75] border-t border-gray-200 lg:w-96 lg:border-l lg:border-t-0 h-full overflow-hidden flex flex-col'>
+          <div className="p-4 border-b border-gray-200">
+            <Suspense fallback={
+              <div className="flex justify-center items-center h-20">
+                <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+              </div>
+            }>
+              <DocumentSummary fileId={file.id} summary={file.summary} />
+            </Suspense>
+          </div>
           <Suspense fallback={
             <div className="flex justify-center items-center h-full">
               <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />

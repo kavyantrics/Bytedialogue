@@ -3,6 +3,7 @@ import { Button } from '../ui/button'
 import { Textarea } from '../ui/textarea'
 import { useContext, useRef } from 'react'
 import { ChatContext } from './ChatContext'
+import VoiceInput from './VoiceInput'
 
 interface ChatInputProps {
   isDisabled?: boolean
@@ -14,6 +15,7 @@ const ChatInput = ({ isDisabled }: ChatInputProps) => {
     handleInputChange,
     isLoading,
     message,
+    sendMessage,
   } = useContext(ChatContext)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -46,16 +48,27 @@ const ChatInput = ({ isDisabled }: ChatInputProps) => {
                   }
                 }}
                 placeholder='Enter your question...'
-                className='resize-none pr-12 text-base py-3 scrollbar-thumb-blue scrollbar-thumb-rounded scrollbar-track-blue-lighter scrollbar-w-2 scrolling-touch'
+                className='resize-none pr-20 text-base py-3 scrollbar-thumb-blue scrollbar-thumb-rounded scrollbar-track-blue-lighter scrollbar-w-2 scrolling-touch'
               />
 
-              <Button
-                disabled={isLoading || isDisabled || !message.trim()}
-                className='absolute bottom-1.5 right-[8px]'
-                aria-label='send message'
-                onClick={handleSubmit}>
-                <Send className='h-4 w-4' />
-              </Button>
+              <div className='absolute bottom-1.5 right-[8px] flex items-center gap-1'>
+                <VoiceInput
+                  onTranscript={(text) => {
+                    // Set the transcribed text in the textarea
+                    if (textareaRef.current) {
+                      textareaRef.current.value = text
+                      handleInputChange({ target: textareaRef.current } as React.ChangeEvent<HTMLTextAreaElement>)
+                    }
+                  }}
+                  disabled={isLoading || isDisabled}
+                />
+                <Button
+                  disabled={isLoading || isDisabled || !message.trim()}
+                  aria-label='send message'
+                  onClick={handleSubmit}>
+                  <Send className='h-4 w-4' />
+                </Button>
+              </div>
             </div>
           </div>
         </div>

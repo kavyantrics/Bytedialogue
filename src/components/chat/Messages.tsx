@@ -3,6 +3,8 @@ import { trpc } from '@/app/_trpc/client'
 import { INFINITE_QUERY_LIMIT } from '@/config/infinite-query'
 import { Loader2 } from 'lucide-react'
 import MessageComponent from './Message'
+import { useContext } from 'react'
+import { ChatContext } from './ChatContext'
 
 interface MessagesProps {
   fileId: string
@@ -19,6 +21,8 @@ interface Message {
 }
 
 const Messages = ({ fileId }: MessagesProps) => {
+  const { sendMessage } = useContext(ChatContext)
+  
   const { data, isLoading, fetchNextPage } = trpc.getFileMessages.useInfiniteQuery(
     {
       fileId,
@@ -28,6 +32,10 @@ const Messages = ({ fileId }: MessagesProps) => {
       getNextPageParam: (lastPage) => lastPage?.nextCursor,
     }
   )
+  
+  const handleSuggestionClick = (suggestion: string) => {
+    sendMessage(suggestion)
+  }
 
   // Get messages from all pages
   // Pages are ordered newest first, but items within each page are reversed (oldest to newest)
@@ -199,6 +207,7 @@ const Messages = ({ fileId }: MessagesProps) => {
                 ref={topMessageRef}
                 message={message}
                 isNextMessageSamePerson={isNextMessageSamePerson}
+                onSuggestionClick={handleSuggestionClick}
                 key={messageKey}
               />
             )
@@ -210,6 +219,7 @@ const Messages = ({ fileId }: MessagesProps) => {
                 ref={lastMessageRef}
                 message={message}
                 isNextMessageSamePerson={isNextMessageSamePerson}
+                onSuggestionClick={handleSuggestionClick}
                 key={messageKey}
               />
             )
@@ -218,6 +228,7 @@ const Messages = ({ fileId }: MessagesProps) => {
               <MessageComponent
                 message={message}
                 isNextMessageSamePerson={isNextMessageSamePerson}
+                onSuggestionClick={handleSuggestionClick}
                 key={messageKey}
               />
             )

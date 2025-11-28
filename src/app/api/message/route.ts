@@ -2,101 +2,13 @@ import { getKindeServerSession } from '@kinde-oss/kinde-auth-nextjs/server'
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { extractPdfText, findRelevantChunks } from '@/lib/rag'
+import { generateFollowUpSuggestions } from '@/lib/followUpSuggestions'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-// Extract text from PDF using pdf-parse-debugging-disabled
-async function extractPdfText(pdfUrl: string): Promise<string> {
-  try {
-    console.log(`[PDF_EXTRACTION] Fetching PDF from URL: ${pdfUrl}`)
-    
-    // Dynamic import to avoid issues during module load
-    const pdfParse = (await import('pdf-parse-debugging-disabled')).default
-    
-    const response = await fetch(pdfUrl, {
-      headers: {
-        'Accept': 'application/pdf',
-      },
-    })
-    
-    console.log(`[PDF_EXTRACTION] Fetch response status: ${response.status} ${response.statusText}`)
-    
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unable to read error response')
-      console.error(`[PDF_EXTRACTION] Failed to fetch PDF: ${response.status} ${response.statusText}`, errorText)
-      throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`)
-    }
-    
-    const contentType = response.headers.get('content-type')
-    console.log(`[PDF_EXTRACTION] Content-Type: ${contentType}`)
-    
-    if (!contentType || !contentType.includes('pdf')) {
-      console.warn(`[PDF_EXTRACTION] Warning: Content-Type is ${contentType}, expected PDF`)
-    }
-    
-    const arrayBuffer = await response.arrayBuffer()
-    console.log(`[PDF_EXTRACTION] Received ${arrayBuffer.byteLength} bytes`)
-    
-    if (arrayBuffer.byteLength === 0) {
-      throw new Error('PDF file is empty')
-    }
-    
-    const buffer = Buffer.from(arrayBuffer)
-    console.log(`[PDF_EXTRACTION] Parsing PDF buffer...`)
-    
-    const data = await pdfParse(buffer)
-    const text = data.text || ''
-    
-    console.log(`[PDF_EXTRACTION] Successfully parsed PDF, extracted ${text.length} characters`)
-    
-    if (text.trim().length === 0) {
-      console.warn(`[PDF_EXTRACTION] Warning: PDF appears to have no extractable text (might be scanned/image-based PDF)`)
-    }
-    
-    return text
-  } catch (error) {
-    console.error('[PDF_EXTRACTION] Error in extractPdfText:', error)
-    if (error instanceof Error) {
-      console.error('[PDF_EXTRACTION] Error message:', error.message)
-      console.error('[PDF_EXTRACTION] Error stack:', error.stack)
-    }
-    throw error
-  }
-}
-
-// Find relevant text chunks from PDF based on query
-function findRelevantChunks(pdfText: string, query: string, maxChunks: number = 3): string[] {
-  // Split PDF into sentences
-  const sentences = pdfText.split(/[.!?]+/).filter(s => s.trim().length > 20)
-  
-  // Simple keyword matching (can be improved with embeddings)
-  const queryWords = query.toLowerCase().split(/\s+/)
-  
-  // Score each sentence based on keyword matches
-  const scoredSentences = sentences.map(sentence => {
-    const lowerSentence = sentence.toLowerCase()
-    const score = queryWords.reduce((acc, word) => {
-      return acc + (lowerSentence.includes(word) ? 1 : 0)
-    }, 0)
-    return { sentence: sentence.trim(), score }
-  })
-  
-  // Sort by score and get top chunks
-  const relevantChunks = scoredSentences
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxChunks)
-    .map(item => item.sentence)
-  
-  // If no matches, return first few sentences as fallback
-  if (relevantChunks.length === 0) {
-    return sentences.slice(0, maxChunks)
-  }
-  
-  return relevantChunks
-}
 
 export async function POST(req: Request) {
   try {
@@ -124,7 +36,7 @@ export async function POST(req: Request) {
       },
     })
 
-    // Get the file to access PDF URL
+    // Get the file to access PDF URL (with new fields)
     const file = await db.file.findFirst({
       where: {
         id: fileId,
@@ -136,28 +48,61 @@ export async function POST(req: Request) {
       return new NextResponse('File not found', { status: 404 })
     }
 
-    // Extract text from PDF
+    // Type assertion for isProcessed (may not exist on old files)
+    const fileWithRAG = file as typeof file & { isProcessed?: boolean }
+
+    // Get PDF context using RAG (vector embeddings) or fallback to keyword matching
     let pdfContext = ''
+    let followUpSuggestions: string[] = []
+    
     try {
-      console.log(`[PDF_EXTRACTION] Starting extraction for file: ${file.id}, URL: ${file.url}`)
-      const pdfText = await extractPdfText(file.url)
-      console.log(`[PDF_EXTRACTION] Successfully extracted ${pdfText.length} characters from PDF`)
+      // Check if file has been processed for RAG
+      if (fileWithRAG.isProcessed) {
+        // Use RAG with vector embeddings
+        console.log(`[RAG] Using vector embeddings for file: ${file.id}`)
+        const relevantChunks = await findRelevantChunks(file.id, message, 5)
+        
+        if (relevantChunks.length > 0) {
+          pdfContext = relevantChunks.map(chunk => chunk.content).join('\n\n')
+          console.log(`[RAG] Found ${relevantChunks.length} relevant chunks using embeddings`)
+        } else {
+          console.log(`[RAG] No relevant chunks found, falling back to keyword matching`)
+        }
+      }
       
-      if (!pdfText || pdfText.trim().length === 0) {
-        console.warn('[PDF_EXTRACTION] PDF text is empty')
-      } else {
-        const relevantChunks = findRelevantChunks(pdfText, message)
-        pdfContext = relevantChunks.join('\n\n')
-        console.log(`[PDF_EXTRACTION] Found ${relevantChunks.length} relevant chunks, context length: ${pdfContext.length}`)
+      // Fallback to keyword-based search if RAG not available or no results
+      if (!pdfContext) {
+        console.log(`[PDF_EXTRACTION] Using keyword-based extraction for file: ${file.id}`)
+        const pdfText = await extractPdfText(file.url)
+        
+        if (pdfText && pdfText.trim().length > 0) {
+          // Simple keyword matching as fallback
+          const sentences = pdfText.split(/[.!?]+/).filter(s => s.trim().length > 20)
+          const queryWords = message.toLowerCase().split(/\s+/)
+          
+          const scoredSentences = sentences.map(sentence => {
+            const lowerSentence = sentence.toLowerCase()
+            const score = queryWords.reduce((acc: number, word: string) => {
+              return acc + (lowerSentence.includes(word) ? 1 : 0)
+            }, 0)
+            return { sentence: sentence.trim(), score }
+          })
+          
+          const relevantChunks = scoredSentences
+            .filter(item => item.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 5)
+            .map(item => item.sentence)
+          
+          pdfContext = relevantChunks.length > 0 
+            ? relevantChunks.join('\n\n')
+            : sentences.slice(0, 3).join('\n\n')
+          
+          console.log(`[PDF_EXTRACTION] Found ${relevantChunks.length} relevant chunks using keyword matching`)
+        }
       }
     } catch (error) {
       console.error('[PDF_EXTRACTION] Error processing PDF:', error)
-      console.error('[PDF_EXTRACTION] Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        fileId: file.id,
-        fileUrl: file.url,
-      })
       // Continue without PDF context if extraction fails
     }
 
@@ -216,15 +161,43 @@ Please answer the user's question using ONLY the information provided in the exc
             }
           }
           
-          // Store the complete AI response
+          // Generate follow-up suggestions
+          try {
+            const conversationHistory = formattedMessages.map(msg => ({
+              role: msg.role,
+              content: typeof msg.content === 'string' ? msg.content : '',
+            }))
+            
+            followUpSuggestions = await generateFollowUpSuggestions(
+              message,
+              pdfContext || '',
+              conversationHistory
+            )
+          } catch (error) {
+            console.error('[FOLLOW_UP] Error generating suggestions:', error)
+          }
+          
+          // Store the complete AI response with follow-up suggestions
           if (aiResponse.trim()) {
+            const messageData: {
+              text: string
+              isUserMessage: boolean
+              userId: string
+              fileId: string
+              followUpSuggestions?: string | null
+            } = {
+              text: aiResponse,
+              isUserMessage: false,
+              userId: user.id,
+              fileId,
+            }
+            
+            if (followUpSuggestions.length > 0) {
+              messageData.followUpSuggestions = JSON.stringify(followUpSuggestions)
+            }
+            
             await db.message.create({
-              data: {
-                text: aiResponse,
-                isUserMessage: false,
-                userId: user.id,
-                fileId,
-              },
+              data: messageData,
             })
           }
         } catch (error) {
