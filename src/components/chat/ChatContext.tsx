@@ -39,7 +39,7 @@ export const ChatContextProvider = ({
   const [message, setMessage] = useState<string>('')
   const [isLoading, setIsLoading] = useState<boolean>(false)
 
-  const utils = trpc.useContext()
+  const utils = trpc.useUtils()
 
   const { toast } = useToast()
 

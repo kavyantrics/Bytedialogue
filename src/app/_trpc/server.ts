@@ -2,6 +2,8 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { db } from '@/lib/db'
 import { getKindeServerSession } from '@kinde-oss/kinde-auth-nextjs/server'
 import { z } from 'zod'
+import { requireAdmin, getUsers, updateUserStatus, updateUserRole, getUserStats } from '@/lib/admin'
+import { getUsageStats, getCurrentMonthUsage } from '@/lib/usageTracking'
 
 interface Context {
   db: typeof db
@@ -60,6 +62,17 @@ export const appRouter = router({
           lastName: user.family_name ?? '',
           profileImage: user.picture ?? '',
           kindeId: user.id,
+          emailVerified: Boolean((user as { email_verified?: boolean }).email_verified),
+          twoFactorEnabled: Boolean((user as { mfa_enabled?: boolean }).mfa_enabled),
+        },
+      })
+    } else {
+      // Update email verification and 2FA status
+      await db.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerified: Boolean((user as { email_verified?: boolean }).email_verified),
+          twoFactorEnabled: Boolean((user as { mfa_enabled?: boolean }).mfa_enabled),
         },
       })
     }
@@ -129,16 +142,6 @@ export const appRouter = router({
         orderBy: {
           createdAt: 'desc' // Newest first
         },
-        select: {
-          id: true,
-          text: true,
-          isUserMessage: true,
-          createdAt: true,
-          updatedAt: true,
-          userId: true,
-          fileId: true,
-          followUpSuggestions: true, // Include follow-up suggestions
-        }
       })
 
       let nextCursor: typeof cursor | undefined = undefined
@@ -188,7 +191,83 @@ export const appRouter = router({
       if (!file) throw new TRPCError({ code: 'NOT_FOUND' })
 
       return file.uploadStatus
-    })
+    }),
+
+  // Usage tracking endpoints
+  getCurrentUsage: privateProcedure.query(async ({ ctx }) => {
+    return await getCurrentMonthUsage(ctx.userId)
+  }),
+
+  // Admin endpoints
+  adminGetUsers: privateProcedure
+    .input(z.object({
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
+      search: z.string().optional(),
+      role: z.enum(['USER', 'ADMIN']).optional(),
+      accountStatus: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED']).optional(),
+    }))
+    .query(async ({ input }) => {
+      await requireAdmin()
+      return await getUsers(input)
+    }),
+
+  adminGetUserStats: privateProcedure
+    .input(z.object({ userId: z.string() }))
+    .query(async ({ input }) => {
+      await requireAdmin()
+      return await getUserStats(input.userId)
+    }),
+
+  adminUpdateUserStatus: privateProcedure
+    .input(z.object({
+      userId: z.string(),
+      status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED']),
+    }))
+    .mutation(async ({ input }) => {
+      await requireAdmin()
+      return await updateUserStatus(input.userId, input.status)
+    }),
+
+  adminUpdateUserRole: privateProcedure
+    .input(z.object({
+      userId: z.string(),
+      role: z.enum(['USER', 'ADMIN']),
+    }))
+    .mutation(async ({ input }) => {
+      await requireAdmin()
+      return await updateUserRole(input.userId, input.role)
+    }),
+
+  adminUpdateUserSubscription: privateProcedure
+    .input(z.object({
+      userId: z.string(),
+      priceId: z.string().optional(),
+      subscriptionId: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      await requireAdmin()
+      // Update user's subscription in database
+      await db.user.update({
+        where: { id: input.userId },
+        data: {
+          stripePriceId: input.priceId || null,
+          stripeSubscriptionId: input.subscriptionId || null,
+          stripeCurrentPeriodEnd: input.subscriptionId ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null, // 30 days from now
+        },
+      })
+      return { success: true }
+    }),
+
+  adminGetUsageStats: privateProcedure
+    .input(z.object({
+      startDate: z.date().optional(),
+      endDate: z.date().optional(),
+    }))
+    .query(async ({ input }) => {
+      await requireAdmin()
+      return await getUsageStats(input.startDate, input.endDate)
+    }),
 })
 
 export type AppRouter = typeof appRouter 

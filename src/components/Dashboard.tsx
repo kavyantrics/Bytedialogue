@@ -15,6 +15,7 @@ import { Button } from './ui/button'
 import { useState, memo } from 'react'
 import { trpc } from '@/app/_trpc/client'
 import { getUserSubscriptionPlan } from '@/lib/stripe'
+import UsageDisplay from './UsageDisplay'
 
 // File type matches tRPC response
 type File = {
@@ -32,13 +33,13 @@ function Dashboard({subscriptionPlan}: PageProps) {
   const [currentlyDeletingFile, setCurrentlyDeletingFile] =
     useState<string | null>(null)
   
-  const utils = trpc.useContext()
-  
   // Use tRPC instead of fetch for better performance
   const { data: files, isLoading } = trpc.getFiles.useQuery(undefined, {
     staleTime: 30000, // Cache for 30 seconds
     refetchOnWindowFocus: false,
   })
+
+  const utils = trpc.useUtils()
 
   const { mutate: deleteFile } = trpc.deleteFile.useMutation({
     onSuccess: () => {
@@ -60,6 +61,11 @@ function Dashboard({subscriptionPlan}: PageProps) {
         </h1>
 
         <UploadButton />
+      </div>
+
+      {/* Usage Display */}
+      <div className='mt-6 mb-8'>
+        <UsageDisplay subscriptionPlan={subscriptionPlan} />
       </div>
 
       {/* display all user files */}

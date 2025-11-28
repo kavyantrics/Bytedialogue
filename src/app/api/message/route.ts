@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { extractPdfText, findRelevantChunks } from '@/lib/rag'
 import { generateFollowUpSuggestions } from '@/lib/followUpSuggestions'
+import { checkUsageLimits, recordUsage, calculateCost } from '@/lib/usageTracking'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -24,6 +25,21 @@ export async function POST(req: Request) {
 
     if (!fileId || !message) {
       return new NextResponse('Missing fileId or message', { status: 400 })
+    }
+
+    // Check usage limits
+    const usageCheck = await checkUsageLimits(user.id)
+    if (!usageCheck.allowed) {
+      return new NextResponse(usageCheck.reason || 'Usage limit exceeded', { status: 403 })
+    }
+
+    // Check account status
+    const dbUser = await db.user.findFirst({
+      where: { id: user.id },
+    })
+
+    if (dbUser?.accountStatus === 'SUSPENDED' || dbUser?.accountStatus === 'BANNED') {
+      return new NextResponse('Account is suspended or banned', { status: 403 })
     }
 
     // Store the user's message
@@ -135,8 +151,9 @@ Please answer the user's question using ONLY the information provided in the exc
       : `You are a helpful assistant. The user has uploaded a PDF document, but I was unable to extract text from it at this time. Please let the user know that you cannot access the document content and ask them to re-upload the file or provide more details about what they're looking for.`
 
     // Create the OpenAI chat completion
+    const model = 'gpt-3.5-turbo'
     const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model,
       messages: [
         {
           role: 'system',
@@ -151,6 +168,9 @@ Please answer the user's question using ONLY the information provided in the exc
     const stream = new ReadableStream({
       async start(controller) {
         let aiResponse = ''
+        let promptTokens = 0
+        let completionTokens = 0
+        let messageId: string | undefined
         
         try {
           for await (const chunk of response) {
@@ -158,6 +178,12 @@ Please answer the user's question using ONLY the information provided in the exc
             if (content) {
               aiResponse += content
               controller.enqueue(new TextEncoder().encode(content))
+            }
+            
+            // Track tokens from stream
+            if (chunk.usage) {
+              promptTokens = chunk.usage.prompt_tokens || 0
+              completionTokens = chunk.usage.completion_tokens || 0
             }
           }
           
@@ -196,10 +222,33 @@ Please answer the user's question using ONLY the information provided in the exc
               messageData.followUpSuggestions = JSON.stringify(followUpSuggestions)
             }
             
-            await db.message.create({
+            const createdMessage = await db.message.create({
               data: messageData,
             })
+            messageId = createdMessage.id
           }
+          
+          // Record usage (estimate tokens if not provided by stream)
+          if (promptTokens === 0 && completionTokens === 0) {
+            // Rough estimation: ~4 characters per token
+            promptTokens = Math.ceil((systemMessage.length + formattedMessages.reduce((acc, msg) => acc + (typeof msg.content === 'string' ? msg.content.length : 0), 0)) / 4)
+            completionTokens = Math.ceil(aiResponse.length / 4)
+          }
+          
+          const totalTokens = promptTokens + completionTokens
+          const cost = calculateCost(model, promptTokens, completionTokens)
+          
+          await recordUsage({
+            userId: user.id,
+            tokensUsed: totalTokens,
+            promptTokens,
+            completionTokens,
+            cost,
+            operationType: 'chat',
+            model,
+            fileId,
+            messageId,
+          })
         } catch (error) {
           console.error('Stream processing error:', error)
           controller.error(error)

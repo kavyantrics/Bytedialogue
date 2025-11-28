@@ -11,8 +11,10 @@ import { Avatar, AvatarFallback } from './ui/avatar'
 import Image from 'next/image'
 import { Icons } from './Icons'
 import Link from 'next/link'
-import { Gem } from 'lucide-react'
+import { Gem, Shield, ShieldCheck, CheckCircle, XCircle } from 'lucide-react'
 import { LogoutLink } from '@kinde-oss/kinde-auth-nextjs/server'
+import { db } from '@/lib/db'
+import { getKindeServerSession } from '@kinde-oss/kinde-auth-nextjs/server'
 
 interface UserAccountNavProps {
   email: string | undefined
@@ -26,6 +28,17 @@ const UserAccountNav = async ({
   name,
 }: UserAccountNavProps) => {
   const subscriptionPlan = await getUserSubscriptionPlan()
+  const { getUser } = getKindeServerSession()
+  const user = await getUser()
+  
+  const dbUser = user ? await db.user.findFirst({
+    where: { id: user.id },
+    select: {
+      role: true,
+      emailVerified: true,
+      twoFactorEnabled: true,
+    },
+  }) : null
 
   return (
     <DropdownMenu>
@@ -90,6 +103,47 @@ const UserAccountNav = async ({
             </Link>
           )}
         </DropdownMenuItem>
+
+        {dbUser?.role === 'ADMIN' && (
+          <DropdownMenuItem asChild>
+            <Link href='/admin'>
+              <Shield className='h-4 w-4 mr-2' />
+              Admin Panel
+            </Link>
+          </DropdownMenuItem>
+        )}
+
+        <DropdownMenuSeparator />
+
+        {/* Security Status */}
+        <div className='px-2 py-1.5 text-xs'>
+          <div className='flex items-center gap-2 mb-1'>
+            {dbUser?.emailVerified ? (
+              <>
+                <CheckCircle className='h-3 w-3 text-green-500' />
+                <span className='text-zinc-600'>Email Verified</span>
+              </>
+            ) : (
+              <>
+                <XCircle className='h-3 w-3 text-zinc-400' />
+                <span className='text-zinc-400'>Email Not Verified</span>
+              </>
+            )}
+          </div>
+          <div className='flex items-center gap-2'>
+            {dbUser?.twoFactorEnabled ? (
+              <>
+                <ShieldCheck className='h-3 w-3 text-green-500' />
+                <span className='text-zinc-600'>2FA Enabled</span>
+              </>
+            ) : (
+              <>
+                <Shield className='h-3 w-3 text-zinc-400' />
+                <span className='text-zinc-400'>2FA Disabled</span>
+              </>
+            )}
+          </div>
+        </div>
 
         <DropdownMenuSeparator />
 

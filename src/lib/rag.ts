@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { db } from '@/lib/db'
+import { recordUsage, calculateCost } from './usageTracking'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -228,6 +229,30 @@ export async function processPdfForRAG(fileId: string, pdfText: string): Promise
 
     // Store in database
     await storeVectorChunks(fileId, chunks, allEmbeddings)
+    
+    // Record usage for embeddings
+    // text-embedding-3-small: ~1536 dimensions per embedding
+    const embeddingTokens = chunks.length * 100 // Rough estimate: ~100 tokens per chunk for embedding
+    const cost = calculateCost('text-embedding-3-small', embeddingTokens, 0)
+    
+    // Get user ID from file
+    const file = await db.file.findFirst({
+      where: { id: fileId },
+      select: { userId: true },
+    })
+    
+    if (file) {
+      await recordUsage({
+        userId: file.userId,
+        tokensUsed: embeddingTokens,
+        promptTokens: embeddingTokens,
+        completionTokens: 0,
+        cost,
+        operationType: 'embedding',
+        model: 'text-embedding-3-small',
+        fileId,
+      })
+    }
     
     console.log(`[RAG] Successfully processed PDF for RAG: ${fileId}`)
   } catch (error) {

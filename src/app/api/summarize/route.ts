@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { extractPdfText } from '@/lib/rag'
 import { generateSummary } from '@/lib/summarizer'
+import { recordUsage, calculateCost } from '@/lib/usageTracking'
 
 export async function POST(req: Request) {
   try {
@@ -46,6 +47,22 @@ export async function POST(req: Request) {
 
     // Generate summary
     const summary = await generateSummary(pdfText)
+
+    // Estimate tokens (rough: ~4 chars per token)
+    const estimatedTokens = Math.ceil(pdfText.length / 4) + Math.ceil(summary.length / 4)
+    const cost = calculateCost('gpt-3.5-turbo', estimatedTokens * 0.7, estimatedTokens * 0.3) // 70% prompt, 30% completion estimate
+
+    // Record usage
+    await recordUsage({
+      userId: user.id,
+      tokensUsed: estimatedTokens,
+      promptTokens: Math.ceil(estimatedTokens * 0.7),
+      completionTokens: Math.ceil(estimatedTokens * 0.3),
+      cost,
+      operationType: 'summary',
+      model: 'gpt-3.5-turbo',
+      fileId,
+    })
 
     // Store summary in database
     await db.file.update({

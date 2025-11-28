@@ -3,6 +3,8 @@ import { getKindeServerSession } from "@kinde-oss/kinde-auth-nextjs/server";
 import { db } from "@/lib/db";
 import { extractPdfText, processPdfForRAG } from "@/lib/rag";
 import { generateSummary } from "@/lib/summarizer";
+import { checkUsageLimits } from "@/lib/usageTracking";
+import { getUserSubscriptionPlan } from "@/lib/stripe";
 
 // Process PDF for RAG in the background
 async function processPdfForRAGBackground(fileId: string, fileUrl: string) {
@@ -35,8 +37,8 @@ async function processPdfForRAGBackground(fileId: string, fileUrl: string) {
 const f = createUploadthing();
 
 export const ourFileRouter = {
-  pdfUploader: f({ pdf: { maxFileSize: "4MB" } })
-    .middleware(async ({ req }) => {
+  pdfUploader: f({ pdf: { maxFileSize: "16MB" } })
+    .middleware(async () => {
       try {
         const { getUser } = getKindeServerSession()
         const user = await getUser()
@@ -46,8 +48,26 @@ export const ourFileRouter = {
           throw new Error("Unauthorized");
         }
 
+        // Check account status
+        const dbUser = await db.user.findFirst({
+          where: { id: user.id },
+        })
+
+        if (dbUser?.accountStatus === 'SUSPENDED' || dbUser?.accountStatus === 'BANNED') {
+          throw new Error("Account is suspended or banned");
+        }
+
+        // Check usage limits
+        const usageCheck = await checkUsageLimits(user.id)
+        if (!usageCheck.allowed) {
+          throw new Error(usageCheck.reason || "Usage limit exceeded");
+        }
+
+        // Get user's plan to check file size limit
+        const plan = await getUserSubscriptionPlan()
+        
         console.log("UploadThing middleware: User authenticated:", user.id)
-        return { userId: user.id };
+        return { userId: user.id, plan };
       } catch (error) {
         console.error("UploadThing middleware error:", error)
         throw error
@@ -60,6 +80,22 @@ export const ourFileRouter = {
         const fileUrl = file.ufsUrl || file.url;
         console.log("File URL:", fileUrl);
 
+        // Check file size against plan limit
+        const plan = metadata.plan || await getUserSubscriptionPlan()
+        if (file.size > plan.fileSizeLimit) {
+          await db.file.create({
+            data: {
+              key: file.key,
+              name: file.name,
+              userId: metadata.userId,
+              url: fileUrl,
+              uploadStatus: "FAILED",
+              size: file.size,
+            },
+          });
+          throw new Error(`File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds plan limit (${(plan.fileSizeLimit / 1024 / 1024).toFixed(2)}MB)`);
+        }
+
         const createdFile = await db.file.create({
           data: {
             key: file.key,
@@ -67,6 +103,7 @@ export const ourFileRouter = {
             userId: metadata.userId,
             url: fileUrl,
             uploadStatus: "SUCCESS",
+            size: file.size,
           },
         });
 
