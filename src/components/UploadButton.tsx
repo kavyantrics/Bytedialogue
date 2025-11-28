@@ -13,16 +13,22 @@ export default function UploadButton() {
   const [uploadProgress, setUploadProgress] = useState<number>(0)
   const router = useRouter()
 
-  const { startUpload } = useUploadThing('pdfUploader', {
-    onClientUploadComplete: () => {
+  const { startUpload, isUploading: uploadThingUploading } = useUploadThing('pdfUploader', {
+    onClientUploadComplete: (res) => {
+      console.log('Upload complete:', res)
       toast.success('Upload complete!')
       setIsUploading(false)
       setUploadProgress(0)
+      router.refresh()
     },
     onUploadError: (error: Error) => {
-      toast.error(`ERROR! ${error?.message}`)
+      console.error('Upload error:', error)
+      toast.error(`Upload failed: ${error?.message || 'Unknown error'}`)
       setIsUploading(false)
-    setUploadProgress(0)
+      setUploadProgress(0)
+    },
+    onUploadProgress: (progress) => {
+      setUploadProgress(progress)
     },
   })
 
@@ -32,22 +38,39 @@ export default function UploadButton() {
     },
     maxFiles: 1,
     onDrop: async (acceptedFiles) => {
-        setIsUploading(true)
+      if (!acceptedFiles || acceptedFiles.length === 0) {
+        toast.error('No files selected')
+        return
+      }
+
+      setIsUploading(true)
       setUploadProgress(0)
 
       try {
-        const res = await startUpload(acceptedFiles)
-        if (!res) {
-          throw new Error('No response from upload')
+        console.log('Starting upload for files:', acceptedFiles.map(f => f.name))
+        
+        // Check if user is authenticated by verifying the upload route
+        const uploadRes = await startUpload(acceptedFiles)
+        
+        // startUpload can return null if the upload fails silently
+        // The onUploadError callback should handle errors, but we check here too
+        if (!uploadRes) {
+          console.error('startUpload returned null - this usually means authentication failed or UploadThing route is not accessible')
+          throw new Error('Upload failed: No response from server. If you see "Invalid token" errors, your UPLOADTHING_TOKEN format is incorrect. UploadThing v7 requires a base64-encoded JSON token. Get a new token from https://uploadthing.com/dashboard -> API Keys. See UPLOADTHING_TOKEN_FIX.md for details.')
         }
-        const [fileResponse] = res
+        
+        const [fileResponse] = uploadRes
         if (!fileResponse) {
-          throw new Error('No file response')
+          throw new Error('Upload completed but no file data received')
         }
+        
+        console.log('Upload successful:', fileResponse)
         setUploadProgress(100)
+        // Note: onClientUploadComplete will handle the rest (toast, refresh, etc.)
       } catch (error) {
         console.error('Upload error:', error)
-        toast.error('Upload failed')
+        const errorMessage = error instanceof Error ? error.message : 'Upload failed'
+        toast.error(`Upload failed: ${errorMessage}`)
         setIsUploading(false)
         setUploadProgress(0)
       }

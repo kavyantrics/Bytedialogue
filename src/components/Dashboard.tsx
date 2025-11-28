@@ -13,8 +13,8 @@ import { Link } from './ui/link'
 import { format } from 'date-fns'
 import { Button } from './ui/button'
 import { useState } from 'react'
-import { getUserSubscriptionPlan } from '@/lib/stripe'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { getUserSubscriptionPlan } from '@/lib/stripe'
 
 interface File {
   id: string

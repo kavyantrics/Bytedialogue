@@ -1,9 +1,10 @@
+import '@/lib/polyfills'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { cn } from '@/lib/utils'
-import { ThemeProvider } from '@/components/ThemeProvider'
 import { Toaster } from '@/components/ui/toaster'
 import TRPCProvider from './_trpc/Provider'
+import ClientThemeProvider from '@/components/ClientThemeProvider'
 
 import 'react-loading-skeleton/dist/skeleton.css'
 import 'simplebar-react/dist/simplebar.min.css'
@@ -37,18 +38,13 @@ export default function RootLayout({
         )}
         suppressHydrationWarning
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
+        <ClientThemeProvider>
           <TRPCProvider>
-          <Toaster />
-          <Navbar />
-          {children}
+            <Toaster />
+            <Navbar />
+            {children}
           </TRPCProvider>
-        </ThemeProvider>
+        </ClientThemeProvider>
         </body>
     </html>
   )

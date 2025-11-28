@@ -24,7 +24,7 @@ export const privateProcedure = t.procedure.use(async ({ ctx, next }) => {
   })
 })
 
-export const createContext = async () => {
+export const createContext = async (opts: { req: Request }) => {
   const { getUser } = getKindeServerSession()
   const user = await getUser()
 
@@ -35,6 +35,38 @@ export const createContext = async () => {
 }
 
 export const appRouter = router({
+  authCallback: publicProcedure.query(async () => {
+    const { getUser } = getKindeServerSession()
+    const user = await getUser()
+
+    if (!user || !user.id) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' })
+    }
+
+    // Check if user exists in database
+    const dbUser = await db.user.findFirst({
+      where: {
+        id: user.id,
+      },
+    })
+
+    if (!dbUser) {
+      // Create user if they don't exist
+      await db.user.create({
+        data: {
+          id: user.id,
+          email: user.email ?? '',
+          firstName: user.given_name ?? '',
+          lastName: user.family_name ?? '',
+          profileImage: user.picture ?? '',
+          kindeId: user.id,
+        },
+      })
+    }
+
+    return { success: true }
+  }),
+
   getFiles: privateProcedure.query(async ({ ctx }) => {
     const files = await db.file.findMany({
       where: {
@@ -56,6 +88,7 @@ export const appRouter = router({
     .query(async ({ ctx, input }) => {
       const { cursor, limit, fileId } = input
 
+      // Fetch messages ordered by newest first (desc) for bottom-up chat
       const messages = await db.message.findMany({
         take: limit + 1,
         where: {
@@ -64,7 +97,7 @@ export const appRouter = router({
         },
         cursor: cursor ? { id: cursor } : undefined,
         orderBy: {
-          createdAt: 'asc'
+          createdAt: 'desc' // Newest first
         }
       })
 
@@ -74,8 +107,12 @@ export const appRouter = router({
         nextCursor = nextItem!.id
       }
 
+      // Reverse to get chronological order (oldest to newest) for display
+      // This way newest messages appear at bottom
+      const reversedMessages = [...messages].reverse()
+
       return {
-        items: messages,
+        items: reversedMessages,
         nextCursor
       }
     }),

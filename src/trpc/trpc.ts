@@ -1,6 +1,6 @@
 import { initTRPC } from '@trpc/server';
 import { getKindeServerSession } from '@kinde-oss/kinde-auth-nextjs/server';
-import { db } from '@/db';
+import { db } from '@/lib/db';
 
 const t = initTRPC.create();
 

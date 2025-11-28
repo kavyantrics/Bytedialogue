@@ -77,30 +77,50 @@ export const ChatContextProvider = ({
       utils.getFileMessages.setInfiniteData(
         { fileId, limit: INFINITE_QUERY_LIMIT },
         (old) => {
-          if (!old) {
+          if (!old || !old.pages || old.pages.length === 0) {
+            // If no pages exist, create a new page with the message
             return {
-              pages: [],
-              pageParams: [],
+              pages: [
+                {
+                  items: [
+                    {
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                      id: crypto.randomUUID(),
+                      text: message,
+                      isUserMessage: true,
+                      userId: '', // This will be set by the server
+                      fileId,
+                    },
+                  ],
+                  nextCursor: undefined,
+                },
+              ],
+              pageParams: [undefined],
             }
           }
 
-          const newPages = [...old.pages]
-          const latestPage = newPages[0]!
-
-          latestPage.items = [
-            {
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-              id: crypto.randomUUID(),
-              text: message,
-              isUserMessage: true,
-              userId: '', // This will be set by the server
-              fileId,
-            },
-            ...latestPage.items,
-          ]
-
-          newPages[0] = latestPage
+          const newPages = old.pages.map((page, index) => {
+            // Add message to the last page (newest messages)
+            if (index === old.pages.length - 1) {
+              return {
+                ...page,
+                items: [
+                  ...page.items,
+                  {
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    id: crypto.randomUUID(),
+                    text: message,
+                    isUserMessage: true,
+                    userId: '', // This will be set by the server
+                    fileId,
+                  },
+                ],
+              }
+            }
+            return page
+          })
 
           return {
             ...old,
@@ -129,11 +149,22 @@ export const ChatContextProvider = ({
       let done = false
       let accResponse = ''
 
+      // Throttle updates to reduce re-renders
+      let lastUpdateTime = 0
+      const UPDATE_THROTTLE = 50 // Update every 50ms instead of on every chunk
+
       while (!done) {
         const { value, done: doneReading } = await reader.read()
         done = doneReading
         const chunkValue = decoder.decode(value)
         accResponse += chunkValue
+
+        // Throttle updates to prevent excessive re-renders
+        const now = Date.now()
+        if (now - lastUpdateTime < UPDATE_THROTTLE && !doneReading) {
+          continue
+        }
+        lastUpdateTime = now
 
         // Update the messages with the streaming response
         utils.getFileMessages.setInfiniteData(
@@ -149,11 +180,14 @@ export const ChatContextProvider = ({
             )
 
             const updatedPages = old.pages.map((page) => {
-              if (page === old.pages[0]) {
+              // Update the last page (where newest messages are)
+              if (page === old.pages[old.pages.length - 1]) {
                 let updatedItems
 
                 if (!isAiResponseCreated) {
+                  // Add AI response at the end
                   updatedItems = [
+                    ...page.items,
                     {
                       createdAt: new Date().toISOString(),
                       updatedAt: new Date().toISOString(),
@@ -163,9 +197,9 @@ export const ChatContextProvider = ({
                       userId: '', // This will be set by the server
                       fileId,
                     },
-                    ...page.items,
                   ]
                 } else {
+                  // Update existing AI response
                   updatedItems = page.items.map(
                     (item) => {
                       if (item.id === 'ai-response') {
