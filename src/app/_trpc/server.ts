@@ -24,7 +24,7 @@ export const privateProcedure = t.procedure.use(async ({ ctx, next }) => {
   })
 })
 
-export const createContext = async (opts: { req: Request }) => {
+export const createContext = async () => {
   const { getUser } = getKindeServerSession()
   const user = await getUser()
 
@@ -74,10 +74,40 @@ export const appRouter = router({
       },
       orderBy: {
         createdAt: 'desc'
+      },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        url: true,
       }
     })
     return files
   }),
+
+  deleteFile: privateProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // Verify file belongs to user
+      const file = await db.file.findFirst({
+        where: {
+          id: input.id,
+          userId: ctx.userId
+        }
+      })
+
+      if (!file) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'File not found' })
+      }
+
+      await db.file.delete({
+        where: {
+          id: input.id
+        }
+      })
+
+      return { success: true }
+    }),
 
   getFileMessages: privateProcedure
     .input(z.object({

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, memo, useMemo } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
@@ -17,13 +17,19 @@ interface PdfRendererProps {
   fileId: string
 }
 
-const PdfRenderer = ({ url, fileId }: PdfRendererProps) => {
+function PdfRenderer({ url, fileId }: PdfRendererProps) {
   const { toast } = useToast()
   const [numPages, setNumPages] = useState<number>()
   const [scale, setScale] = useState<number>(1)
   const [rotation, setRotation] = useState<number>(0)
 
   const { width, ref } = useResizeDetector()
+
+  // Memoize page array to prevent unnecessary re-renders
+  const pagesArray = useMemo(() => {
+    if (!numPages) return []
+    return new Array(numPages).fill(0).map((_, i) => i + 1)
+  }, [numPages])
 
   return (
     <div className="w-full bg-white rounded-md shadow flex flex-col items-center">
@@ -90,11 +96,11 @@ const PdfRenderer = ({ url, fileId }: PdfRendererProps) => {
           >
             {numPages && (
               <div className="space-y-4">
-                {new Array(numPages).fill(0).map((_, i) => (
-                  <div key={i} className="shadow-sm border border-zinc-200 rounded">
+                {pagesArray.map((pageNum) => (
+                  <div key={pageNum} className="shadow-sm border border-zinc-200 rounded">
                     <Page
                       width={width ? width : 1}
-                      pageNumber={i + 1}
+                      pageNumber={pageNum}
                       scale={scale}
                       rotate={rotation}
                       loading={
@@ -122,4 +128,7 @@ const PdfRenderer = ({ url, fileId }: PdfRendererProps) => {
   )
 }
 
-export default PdfRenderer
+const PdfRendererMemo = memo(PdfRenderer)
+PdfRendererMemo.displayName = 'PdfRenderer'
+
+export default PdfRendererMemo

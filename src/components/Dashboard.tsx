@@ -12,15 +12,15 @@ import Skeleton from 'react-loading-skeleton'
 import { Link } from './ui/link'
 import { format } from 'date-fns'
 import { Button } from './ui/button'
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, memo } from 'react'
+import { trpc } from '@/app/_trpc/client'
 import { getUserSubscriptionPlan } from '@/lib/stripe'
 
-interface File {
+// File type matches tRPC response
+type File = {
   id: string
   name: string
-  createdAt: string
-  public_id: string
+  createdAt: Date
   url: string
 }
 
@@ -28,42 +28,29 @@ interface PageProps {
   subscriptionPlan: Awaited<ReturnType<typeof getUserSubscriptionPlan>>
 }
 
-const Dashboard = ({subscriptionPlan}: PageProps) => {
+function Dashboard({subscriptionPlan}: PageProps) {
   const [currentlyDeletingFile, setCurrentlyDeletingFile] =
     useState<string | null>(null)
-  const queryClient = useQueryClient()
-
-  const { data: files, isLoading } = useQuery<File[]>({
-    queryKey: ['files'],
-    queryFn: async () => {
-      const response = await fetch('/api/files')
-      if (!response.ok) {
-        throw new Error('Failed to fetch files')
-      }
-      return response.json()
-    }
+  
+  const utils = trpc.useContext()
+  
+  // Use tRPC instead of fetch for better performance
+  const { data: files, isLoading } = trpc.getFiles.useQuery(undefined, {
+    staleTime: 30000, // Cache for 30 seconds
+    refetchOnWindowFocus: false,
   })
 
-  const { mutate: deleteFile } = useMutation({
-    mutationFn: async ({ id }: { id: string }) => {
-      const response = await fetch(`/api/files/${id}`, {
-        method: 'DELETE',
-      })
-      if (!response.ok) {
-        throw new Error('Failed to delete file')
-      }
-      return response.json()
+  const { mutate: deleteFile } = trpc.deleteFile.useMutation({
+    onSuccess: () => {
+      utils.getFiles.invalidate()
     },
-      onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['files'] })
-      },
     onMutate: ({ id }) => {
-        setCurrentlyDeletingFile(id)
-      },
+      setCurrentlyDeletingFile(id)
+    },
     onSettled: () => {
-        setCurrentlyDeletingFile(null)
-      },
-    })
+      setCurrentlyDeletingFile(null)
+    },
+  })
 
   return (
     <main className='mx-auto max-w-7xl md:p-10'>
@@ -72,7 +59,7 @@ const Dashboard = ({subscriptionPlan}: PageProps) => {
           My Files
         </h1>
 
-        <UploadButton isSubscribed={subscriptionPlan.isSubscribed} />
+        <UploadButton />
       </div>
 
       {/* display all user files */}
@@ -123,7 +110,8 @@ const Dashboard = ({subscriptionPlan}: PageProps) => {
                     }
                     size='sm'
                     className='w-full'
-                    variant='destructive'>
+                    variant='destructive'
+                    disabled={currentlyDeletingFile === file.id}>
                     {currentlyDeletingFile === file.id ? (
                       <Loader2 className='h-4 w-4 animate-spin' />
                     ) : (
@@ -149,4 +137,7 @@ const Dashboard = ({subscriptionPlan}: PageProps) => {
   )
 }
 
-export default Dashboard
+const DashboardMemo = memo(Dashboard)
+DashboardMemo.displayName = 'Dashboard'
+
+export default DashboardMemo
